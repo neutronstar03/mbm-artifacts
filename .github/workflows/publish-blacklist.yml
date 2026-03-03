@@ -1,9 +1,9 @@
-name: Publish Datasets
+name: Publish Blacklist Dataset
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: 17 3 * * *
+    - cron: 37 3 * * *
 
 permissions:
   contents: read
@@ -37,30 +37,32 @@ jobs:
         working-directory: src
         run: bun install --frozen-lockfile
 
-      - name: Seed previous whitelist (best effort)
+      - name: Seed previous datasets (best effort)
         working-directory: src
         run: |
           set -euo pipefail
-          url="https://neutronstar03.github.io/mbm-artifacts/v1/whitelist.collaterals.json"
-          echo "Seeding from: $url"
-          if curl -fsSL "$url" -o "public/whitelist.collaterals.json"; then
-            echo "Seeded public/whitelist.collaterals.json"
-          else
-            echo "No seed available (ok)."
-          fi
+          base="https://neutronstar03.github.io/mbm-artifacts/v1"
+          for f in whitelist.collaterals.json blacklist.markets.json; do
+            url="$base/$f"
+            echo "Seeding from: $url"
+            if curl -fsSL "$url" -o "public/$f"; then
+              echo "Seeded public/$f"
+            else
+              echo "No seed for $f (ok)."
+            fi
+          done
 
-      - name: Generate datasets
+      - name: Generate blacklist
         working-directory: src
         run: |
           set -euo pipefail
           bun run gen:blacklist:markets
-          bun run gen:whitelist:collaterals
 
       - name: Assemble Pages site
         run: |
           set -euo pipefail
           mkdir -p site/v1
-          cp "src/public/whitelist.collaterals.json" "site/v1/whitelist.collaterals.json"
+          cp "src/public/whitelist.collaterals.json" "site/v1/whitelist.collaterals.json" || true
           cp "src/public/blacklist.markets.json" "site/v1/blacklist.markets.json"
 
           generatedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

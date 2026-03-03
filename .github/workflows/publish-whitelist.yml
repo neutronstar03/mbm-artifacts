@@ -1,0 +1,99 @@
+name: Publish Whitelist Dataset
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: 17 3 * * *
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout artifacts repo
+        uses: actions/checkout@v4
+
+      - name: Checkout morpho-blue-markets
+        uses: actions/checkout@v4
+        with:
+          repository: neutronstar03/morpho-blue-markets
+          ref: main
+          path: src
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Install deps
+        working-directory: src
+        run: bun install --frozen-lockfile
+
+      - name: Seed previous datasets (best effort)
+        working-directory: src
+        run: |
+          set -euo pipefail
+          base="https://neutronstar03.github.io/mbm-artifacts/v1"
+          for f in whitelist.collaterals.json blacklist.markets.json; do
+            url="$base/$f"
+            echo "Seeding from: $url"
+            if curl -fsSL "$url" -o "public/$f"; then
+              echo "Seeded public/$f"
+            else
+              echo "No seed for $f (ok)."
+            fi
+          done
+
+      - name: Generate whitelist
+        working-directory: src
+        run: |
+          set -euo pipefail
+          bun run gen:whitelist:collaterals
+
+      - name: Assemble Pages site
+        run: |
+          set -euo pipefail
+          mkdir -p site/v1
+          cp "src/public/whitelist.collaterals.json" "site/v1/whitelist.collaterals.json"
+          cp "src/public/blacklist.markets.json" "site/v1/blacklist.markets.json" || true
+
+          generatedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          sourceSha="$(git -C src rev-parse HEAD)"
+          cat > site/v1/index.json <<EOF
+          {
+            "version": 1,
+            "generatedAt": "${generatedAt}",
+            "source": {
+              "repo": "neutronstar03/morpho-blue-markets",
+              "ref": "main",
+              "sha": "${sourceSha}"
+            },
+            "files": [
+              "whitelist.collaterals.json",
+              "blacklist.markets.json"
+            ]
+          }
+          EOF
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
