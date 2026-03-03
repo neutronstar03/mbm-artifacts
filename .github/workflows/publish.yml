@@ -61,7 +61,7 @@ jobs:
           set -euo pipefail
           mkdir -p site/v1
           cp "src/public/whitelist.collaterals.json" "site/v1/whitelist.collaterals.json"
-          cp "src/app/lib/blacklist.markets.json" "site/v1/blacklist.markets.json"
+          cp "src/public/blacklist.markets.json" "site/v1/blacklist.markets.json"
 
           generatedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           sourceSha="$(git -C src rev-parse HEAD)"
