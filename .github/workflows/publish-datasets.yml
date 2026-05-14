@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.change-check.outputs.changed }}
     steps:
       - name: Checkout artifacts repo
         uses: actions/checkout@v4
@@ -42,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://neutronstar03.github.io/mbm-artifacts/v1"
-          for f in whitelist.collaterals.json blacklist.markets.json; do
+          for f in whitelist.collaterals.json blacklist.markets.json oracle-providers.json; do
             url="$base/$f"
             echo "Seeding from: $url"
             if curl -fsSL "$url" -o "public/$f"; then
@@ -58,6 +60,7 @@ jobs:
           set -euo pipefail
           bun run gen:whitelist:collaterals
           bun run gen:blacklist:markets
+          bun run gen:oracle-providers
 
       - name: Assemble Pages site
         run: |
@@ -65,9 +68,13 @@ jobs:
           mkdir -p site/v1
           cp "src/public/whitelist.collaterals.json" "site/v1/whitelist.collaterals.json"
           cp "src/public/blacklist.markets.json" "site/v1/blacklist.markets.json"
+          cp "src/public/oracle-providers.json" "site/v1/oracle-providers.json"
 
           generatedAt="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           sourceSha="$(git -C src rev-parse HEAD)"
+          whitelistSha="$(sha256sum site/v1/whitelist.collaterals.json | awk '{print $1}')"
+          blacklistSha="$(sha256sum site/v1/blacklist.markets.json | awk '{print $1}')"
+          oracleProvidersSha="$(sha256sum site/v1/oracle-providers.json | awk '{print $1}')"
           cat > site/v1/index.json <<EOF
           {
             "version": 1,
@@ -77,20 +84,52 @@ jobs:
               "ref": "main",
               "sha": "${sourceSha}"
             },
-            "files": [
-              "whitelist.collaterals.json",
-              "blacklist.markets.json"
-            ]
+            "files": {
+              "whitelist.collaterals.json": {
+                "sha256": "${whitelistSha}"
+              },
+              "blacklist.markets.json": {
+                "sha256": "${blacklistSha}"
+              },
+              "oracle-providers.json": {
+                "sha256": "${oracleProvidersSha}"
+              }
+            }
           }
           EOF
 
+      - name: Check for dataset changes
+        id: change-check
+        run: |
+          set -euo pipefail
+          base="https://neutronstar03.github.io/mbm-artifacts/v1"
+          changed="false"
+          for f in whitelist.collaterals.json blacklist.markets.json oracle-providers.json; do
+            if ! curl -fsSL "$base/$f" -o "/tmp/$f"; then
+              echo "$f is new"
+              changed="true"
+              continue
+            fi
+            oldSha="$(sha256sum "/tmp/$f" | awk '{print $1}')"
+            newSha="$(sha256sum "site/v1/$f" | awk '{print $1}')"
+            if [ "$oldSha" != "$newSha" ]; then
+              echo "$f changed: $oldSha -> $newSha"
+              changed="true"
+            else
+              echo "$f unchanged"
+            fi
+          done
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+
       - name: Upload Pages artifact
+        if: steps.change-check.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
 
   deploy:
     needs: build
+    if: needs.build.outputs.changed == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

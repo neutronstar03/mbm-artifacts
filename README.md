@@ -10,6 +10,7 @@ Current dataset URLs (v1):
 
 - https://neutronstar03.github.io/mbm-artifacts/v1/whitelist.collaterals.json
 - https://neutronstar03.github.io/mbm-artifacts/v1/blacklist.markets.json
+- https://neutronstar03.github.io/mbm-artifacts/v1/oracle-providers.json
 
 Notes
 
